@@ -1,0 +1,59 @@
+import { Pool } from 'pg';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../src/generated/prisma/client';
+import bycrypt from 'bcryptjs';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const pool = new Pool({connectionString: process.env.DATABASE_URL});
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({adapter});
+
+
+async function main() {
+    const adminEmail = 'davedev.clone6@gmail.com';
+    const temporaryPassowrd = 'DefaultPassword';
+
+    // Check if an admin user already exists
+    console.log('Checking for existing administrator accounts... ')
+
+    const existingAdmin = await prisma.user.findUnique({
+        where: {email : adminEmail},
+    })
+
+    if (existingAdmin) {
+        console.log(`An administrator accout with email ${adminEmail} already exists. Skipping seed.`);
+        return;
+    }
+
+    const hashedPassword = await bycrypt.hash(temporaryPassowrd, 12);
+    
+    // Create the admin user
+    await prisma.user.create({
+        data: {
+            email: adminEmail,
+            passowrd: hashedPassword,
+            role: 'ADMIN',
+            isActive: true,
+        }
+    })
+
+
+    console.log('-'.repeat(50));
+    console.log('Master administrator account successfully seeded!!!');
+    console.log(`Email:     ${adminEmail}`);
+    console.log(`Password:  ${temporaryPassowrd}`);
+    console.log('-'.repeat(50));
+}
+
+
+main()
+    .catch((e) =>{
+        console.error('Seeding process failed:', e)
+        process.exit(1);
+    })
+    .finally(async () =>{
+        await prisma.$disconnect();
+        await pool.end();
+    })
