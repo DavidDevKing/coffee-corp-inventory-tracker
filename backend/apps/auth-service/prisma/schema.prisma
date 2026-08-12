@@ -30,6 +30,20 @@ model User{
   tokenExpires DateTime? @map("token_expires")
   createdAt DateTime @default(now()) @map("created_at")
 
+  refreshTokens RefreshToken[]
+
   @@map("users")
+
+}
+
+
+model RefreshToken{
+  id Int @id @default(autoincrement())
+  tokenString String @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  userId Int
+  user User @relation(fields:[userId], references: [id], onDelete: Cascade)
 
 }

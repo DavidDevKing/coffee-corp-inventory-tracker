@@ -1,14 +1,9 @@
-import { Pool } from 'pg';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '../src/generated/prisma/client';
+import { prisma, pool } from '../src/config/db'
+import { env } from '../src/config/env'
 import bycrypt from 'bcryptjs';
-import dotenv from 'dotenv';
 
-dotenv.config();
 
-const pool = new Pool({connectionString: process.env.DATABASE_URL});
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({adapter});
+
 
 
 async function main() {
