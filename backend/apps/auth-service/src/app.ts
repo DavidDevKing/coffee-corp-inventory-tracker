@@ -21,7 +21,7 @@ app.get('/', (req: Request, res: Response) => {
 })
 
 
-app.use('/api/auth', authRoutes);
+app.use('/api/v1/auth', authRoutes);
 
 
 app.use((req : Request, res : Response, next : NextFunction) => {

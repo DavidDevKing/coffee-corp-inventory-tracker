@@ -14,6 +14,8 @@ export interface refreshRequest extends Request {
 export interface accessRequest extends Request{
     user? : {
         id : number;
+        firstName : string;
+        lastName : string;
         email : string;
         role : "ADMIN" | "MANAGER" | "USER";
     }

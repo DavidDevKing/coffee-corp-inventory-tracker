@@ -3,9 +3,66 @@ import bcrypt from 'bcryptjs';
 import { env } from '../config/env.ts'
 
 import { prisma } from '../config/db.ts';
-import { deleteExpiredTokens, generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../services/token.service.ts';
-import type { accessTokenPayload, refreshTokenPayload } from '../services/token.service.ts';
+import { deleteExpiredTokens, generateAccessToken, generateInvitationToken, generateRefreshToken, verifyRefreshToken } from '../services/token.service.ts';
+import type { accessTokenPayload, invitationTokenPayload, refreshTokenPayload } from '../services/token.service.ts';
 import type { accessRequest, refreshRequest } from '../middleware/authenticate.ts';
+import { sendActivationMail } from '../services/email.service.ts';
+import { PrismaClientKnownRequestError } from '../generated/prisma/internal/prismaNamespace.ts';
+import type { User } from '../generated/prisma/client.ts';
+
+export const createUser = async (req: accessRequest, res : Response, next : NextFunction) => {
+    if (!req.user) return res.status(401).json({ error : "Unauthorised" });
+
+    // Create the new user
+    const newUserData : {firstName : string, lastName : string, email : string, role : 'ADMIN'|'MANAGER'|'USER'} = req.body;
+
+    if (!newUserData.firstName || !newUserData.lastName || !newUserData.email || !newUserData.role) {
+        return res.status(400).json({ error : "Missing Required Fields" });
+    }
+    if (!["MANAGER", "ADMIN", "USER"].includes(newUserData.role)){
+        return res.status(400).json({ error : "Invalid role provided." });
+    }
+
+    let newUser : User;
+    try{
+        newUser = await prisma.user.create({
+            data : {
+                email : newUserData.email,
+                firstName : newUserData.firstName,
+                lastName : newUserData.lastName,
+                role : newUserData.role,
+            }
+        })
+    }
+    catch(e : any){
+        console.error("Couldn't create new user:", e);
+        if (e instanceof PrismaClientKnownRequestError) {
+            if (e.code = "P2002") {
+                return res.status(409).json({ error : "Email already exists" });
+            }
+        }
+        return res.status(500).json({ error : "Internal server error"});
+    }
+
+
+    // Generate Token
+    const invitationTokenPayload : invitationTokenPayload = {
+        id : newUser.id
+    }
+    const token = generateInvitationToken(invitationTokenPayload);
+
+
+    try {
+        sendActivationMail(newUserData.firstName, newUserData.email, token);
+    }
+    catch(e){
+        console.error("Faild to send invitation email", e);
+        return res.status(500).json({ error : "Internal Server Error" });
+    }
+
+    return res.status(201).json({ message : "New User Created Successfully" });
+
+}
 
 export const login = async (req: Request, res: Response, next: NextFunction) => {
     const userData : {email : string, password: string} = req.body;
@@ -29,8 +86,10 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
     // Generate the tokens
     const accessPayload : accessTokenPayload = {
         id : user.id,
+        firstName : user.firstName,
+        lastName : user.lastName,
         email : user.email,
-        role : user.role
+        role : user.role,
     }
     const refreshPayload : refreshTokenPayload = {
         id : user.id,
@@ -53,8 +112,7 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
     
     catch (error){
         console.error(`Failed to store refresh token:`, error);
-        res.status(500).json({ message: `Login failed. Please try again` });
-        return;
+        return res.status(500).json({ message: `Login failed. Please try again` });
     }
 
     
@@ -105,6 +163,8 @@ export const refresh = async (req: refreshRequest, res: Response, next : NextFun
     // Genereate a new access token
     const newTokenPayload : accessTokenPayload = {
         id : user.id,
+        firstName : user.firstName,
+        lastName : user.lastName,
         email : user.email,
         role : user.role
     }
@@ -128,7 +188,7 @@ export const refresh = async (req: refreshRequest, res: Response, next : NextFun
 
 export const logout = async (req : accessRequest, res : Response, next : NextFunction) => {
     if (!req.user){
-        return res.status(403).json({ error : "UnAuthorised"});
+        return res.status(401).json({ error : "UnAuthorised"});
     }
     const userId = req.user.id;
     await prisma.refreshToken.delete({

@@ -21,5 +21,8 @@ export const env = {
     DATABASE_URL : getEnvVariable('DATABASE_URL'),
     ACCESS_SECRET : getEnvVariable('ACCESS_SECRET'),
     REFRESH_SECRET : getEnvVariable('REFRESH_SECRET'),
-
+    INVITATION_SECRET : getEnvVariable('INVITATION_SECRET'),
+    EMAIL_USER : getEnvVariable('EMAIL_USER'),
+    EMAIL_PASSOWRD : getEnvVariable('EMAIL_PASSWORD'),
+    BASE_URL : getEnvVariable('BASE_URL'),
 } as const
