@@ -3,66 +3,102 @@ import bcrypt from 'bcryptjs';
 import { env } from '../config/env.ts'
 
 import { prisma } from '../config/db.ts';
-import { deleteExpiredTokens, generateAccessToken, generateInvitationToken, generateRefreshToken, verifyRefreshToken } from '../services/token.service.ts';
-import type { accessTokenPayload, invitationTokenPayload, refreshTokenPayload } from '../services/token.service.ts';
+import { deleteExpiredTokens, generateAccessToken, generateRefreshToken} from '../services/token.service.ts';
+import type { accessTokenPayload, refreshTokenPayload } from '../services/token.service.ts';
 import type { accessRequest, refreshRequest } from '../middleware/authenticate.ts';
-import { sendActivationMail } from '../services/email.service.ts';
-import { PrismaClientKnownRequestError } from '../generated/prisma/internal/prismaNamespace.ts';
-import type { User } from '../generated/prisma/client.ts';
-
-export const createUser = async (req: accessRequest, res : Response, next : NextFunction) => {
-    if (!req.user) return res.status(401).json({ error : "Unauthorised" });
-
-    // Create the new user
-    const newUserData : {firstName : string, lastName : string, email : string, role : 'ADMIN'|'MANAGER'|'USER'} = req.body;
-
-    if (!newUserData.firstName || !newUserData.lastName || !newUserData.email || !newUserData.role) {
-        return res.status(400).json({ error : "Missing Required Fields" });
-    }
-    if (!["MANAGER", "ADMIN", "USER"].includes(newUserData.role)){
-        return res.status(400).json({ error : "Invalid role provided." });
-    }
-
-    let newUser : User;
-    try{
-        newUser = await prisma.user.create({
-            data : {
-                email : newUserData.email,
-                firstName : newUserData.firstName,
-                lastName : newUserData.lastName,
-                role : newUserData.role,
-            }
-        })
-    }
-    catch(e : any){
-        console.error("Couldn't create new user:", e);
-        if (e instanceof PrismaClientKnownRequestError) {
-            if (e.code = "P2002") {
-                return res.status(409).json({ error : "Email already exists" });
-            }
-        }
-        return res.status(500).json({ error : "Internal server error"});
-    }
 
 
-    // Generate Token
-    const invitationTokenPayload : invitationTokenPayload = {
-        id : newUser.id
-    }
-    const token = generateInvitationToken(invitationTokenPayload);
 
+
+
+// Endpoint for users to verify the invitation token when trying to activate their account
+export const verifyInvitationToken = async (req : Request, res : Response, next : NextFunction) => {
+    if (!req.query.token) return res.status(400).json({ error : "No token provided." });
+    const token : string = req.query.token as string;
 
     try {
-        sendActivationMail(newUserData.firstName, newUserData.email, token);
-    }
-    catch(e){
-        console.error("Faild to send invitation email", e);
-        return res.status(500).json({ error : "Internal Server Error" });
-    }
+        const user = await prisma.user.findUnique({
+            where: {
+                invitationToken : token
+            }
+        });
 
-    return res.status(201).json({ message : "New User Created Successfully" });
+        if (!user){
+            return res.status(401).json({ error : "Invalid Token"});
+        }
+        if (user.isActive){
+            return res.status(400).json({ error : "User already activated" });
+        }
+        if (user.tokenExpires && user.tokenExpires < new Date()){
+            return res.status(401).json({ error : "Expired Token" });
+        }
 
+        return res.status(200).json({
+            message: "Invitation Token Verified",
+            user : {
+                firstName : user.firstName,
+                lastName : user.lastName
+            }
+        });
+        
+    }
+    catch (e) {
+        console.error("Failed to verify invitation token", e);
+        return res.status(500).json({ error : "Internal server error" });
+    }
 }
+
+
+
+
+
+export const activateAccount = async (req : Request, res : Response, next : NextFunction) => {
+    try{
+        // verify token
+        const token : string = req.body.token;
+        if (!token) return res.status(401).json({ error : "No token provided" });
+        if (!req.body.password) return res.status(401).json({ error : "No password provided" });
+        const user = await prisma.user.findUnique({
+            where : {
+                invitationToken : token
+            }
+        })
+
+        if (!user){
+            return res.status(401).json({ error : "Invalid Token"});
+        }
+        if (user.isActive){
+            return res.status(400).json({ error : "User already activated" });
+        }
+        if (user.tokenExpires && user.tokenExpires < new Date()){
+            return res.status(401).json({ error : "Expired Token" });
+        }
+
+        // Update user password and activate user
+        const passwordHash : string = await bcrypt.hash(req.body.password, 12);
+        await prisma.user.update({
+            where : {
+                id : user.id
+            },
+            data : {
+                password : passwordHash,
+                isActive : true,
+                invitationToken : null,
+                tokenExpires : null
+            }
+        })
+
+        return res.status(200).json({ message : "Account activated successfully" });
+    }
+    catch(e) {
+        console.error("Unnable to activate account", e)
+        return res.status(500).json({ error : "Internal server error" });
+    }
+}
+
+
+
+
 
 export const login = async (req: Request, res: Response, next: NextFunction) => {
     const userData : {email : string, password: string} = req.body;
@@ -76,9 +112,9 @@ export const login = async (req: Request, res: Response, next: NextFunction) => 
     if (!user){
         return res.status(401).json({message : "Invalid username or password"});
     }
-    const isPassowrdMatch = bcrypt.compare(userData.password, user.passowrd as string);
+    const isPasswordMatch = await bcrypt.compare(userData.password, user.password as string);
     
-    if (!isPassowrdMatch){
+    if (!isPasswordMatch){
         return res.status(401).json({message : "Invalid username or password"});
     }
 
@@ -186,6 +222,7 @@ export const refresh = async (req: refreshRequest, res: Response, next : NextFun
 
 
 
+
 export const logout = async (req : accessRequest, res : Response, next : NextFunction) => {
     if (!req.user){
         return res.status(401).json({ error : "UnAuthorised"});
@@ -204,3 +241,5 @@ export const logout = async (req : accessRequest, res : Response, next : NextFun
 
     res.status(200).json({ message: "Loggout successful"});
 }
+
+

@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import Jwt from 'jsonwebtoken';
 
-import { verifyRefreshToken, verifyAccessToken } from '../services/token.service.ts';
+import { verifyRefreshToken, verifyAccessToken, verifyInvitationToken } from '../services/token.service.ts';
 
 
 
@@ -23,6 +23,7 @@ export interface accessRequest extends Request{
 
 
 
+
 export const authenticateRefreshRequest = async (req : refreshRequest, res: Response, next: NextFunction) => {
     const tokenString : string = req.cookies.refreshToken;
     try{
@@ -31,8 +32,15 @@ export const authenticateRefreshRequest = async (req : refreshRequest, res: Resp
         next();
     }
     catch(e){
-        console.error("Failed to verify token", e);
-        res.status(401).json({ error: 'Invalid or expired token'});
+        console.error("Failed to verify access token", e);
+        if (e instanceof Error){
+            if (e.name === "TokenExpiredError"){
+                res.status(401).json({ error: 'Expired Token'});
+            }
+            else {
+                res.status(400).json({ error : "Invalid Token" });
+            }
+        }
     }
 
 }
@@ -45,6 +53,7 @@ export const authenticateAccessRequest = async (req : accessRequest, res : Respo
         next();
     }
     catch(e){
+        console.error("Failed to verify refresh token", e);
         if (e instanceof Error){            
             if (e.name === "TokenExpiredError"){
                 res.status(401).json({ error : "Token expired"});

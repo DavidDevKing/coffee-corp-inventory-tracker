@@ -25,7 +25,7 @@ model User{
   firstName String @default("")
   lastName String @default("")
   email String @unique
-  passowrd String?
+  password String?
   role Role @default(USER)
   isActive Boolean @default(false)
   invitationToken String? @unique @map("invitation_token")
