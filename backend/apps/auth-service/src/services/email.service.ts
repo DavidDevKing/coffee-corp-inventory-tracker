@@ -6,7 +6,7 @@ export const sendActivationMail = async (recipient : string, email : string, tok
         service: 'gmail',
         auth : { user: env.EMAIL_USER, pass: env.EMAIL_PASSOWRD },
     })
-    const url = `${env.BASE_URL}/api/auth/verify?token=${token}`;
+    const url = `${env.BASE_URL}/api/auth/invitaions/verify?token=${token}`;
 
     await transporter.sendMail({
         from: env.EMAIL_USER,
